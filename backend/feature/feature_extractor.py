@@ -11,6 +11,10 @@ from enums.eval import (
 )
 from enums.moves import MoveImpact, DiscoveredTactic
 
+import chess
+import chess.engine
+from pathlib import Path
+
 
 class FeatureExtractor:
 
@@ -43,6 +47,36 @@ class FeatureExtractor:
 
 
     # ------------------- FEATURE LOGIC -------------------
+
+    def evaluate_position(state: GameState, stockfish_path: str | None = None, time_limit: float = 0.1) -> float | str:
+        """
+        Evaluates a position using Stockfish.
+        Returns a centipawn score from White's perspective,
+        or "Mate in N" string if forced mate found.
+        """
+
+        # default stockfish path (uses windows stockfish in repo)
+        if stockfish_path is None:
+            project_root = Path(__file__).resolve().parent.parent
+            stockfish_path = project_root / "stockfish" / "stockfish-windows.exe"
+
+        board = chess.Board(state.fen)
+        # load engine
+        with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+            result = engine.analyse(
+                board,
+                chess.engine.Limit(time=time_limit)
+            )
+
+        score = result["score"].white()
+
+        # handle checkmate
+        if score.is_mate():
+            mate_in = score.mate()
+            return f"Mate in {mate_in}"
+
+        return score.score()
+
 
     @staticmethod
     def _infer_game_phase(state: GameState) -> GamePhase:
