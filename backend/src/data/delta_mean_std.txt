@@ -1,0 +1,9 @@
+material_balance_delta: 0.015031, 1.060326
+piece_activity_delta: -0.112330, 3.825274
+pawn_structure_delta: 0.034532, 0.392425
+tactical_danger_delta: 0.081048, 0.925924
+stockfish_eval_delta: 1.445257, 192.481168
+mate_in_delta: -0.054641, 0.852795
+rooks_on_open_files_delta: 0.014219, 0.238914
+open_files_toward_king_delta: 0.009141, 0.506426
+win_percentage_delta: -0.027972, 16.756484
