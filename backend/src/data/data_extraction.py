@@ -84,7 +84,7 @@ def state_move_variations (fen: str):
         return x.value if x is not None else None
     
     def get_z_score(x_name: str, x):
-        return (global_mean_std[x_name][0] - x) / global_mean_std[x_name][1]
+        return (x - global_mean_std[x_name][0]) / global_mean_std[x_name][1]
 
     for move in moves:
         board = chess.Board(state.fen)
