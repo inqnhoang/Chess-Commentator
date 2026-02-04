@@ -14,7 +14,6 @@ class DataPoint:
         curr_features = FeatureExtractor.extract(self.curr, engine=engine)
         next_features = FeatureExtractor.extract(self.next, engine=engine)
 
-        # convert None to 0 for numeric fields
         def safe(val):
             return 0 if val is None else val
         

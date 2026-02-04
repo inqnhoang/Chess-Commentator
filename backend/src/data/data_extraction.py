@@ -132,9 +132,11 @@ def main ():
                     enum_bool_delta_points[key].append(deltas[key])
             
             counter += 1
-            if counter % 1000 == 0:
+            if counter % 10000 == 0:
+                print(counter)
+
+            if counter == 250000:
                 break
-            print(counter)
         
     with open(OUTPUT_FILE, "w+") as outfile:
         for key, deltas in numeric_delta_points.items():
