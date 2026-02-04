@@ -49,6 +49,20 @@ enum_bool_delta_points = {
     "promotion_threat_delta": []
 }
 
+# mean | std
+global_mean_std = {
+    "material_balance_delta": [0.001632, 1.019749],
+    "piece_activity_delta":[0.112995, 3.669102],
+    "pawn_structure_delta": [0.025333, 0.377105],
+    "tactical_danger_delta": [0.078585, 0.898893],
+    "stockfish_eval_delta": [-1.263611, 155.263410],
+    "mate_in_delta": [0.001535, 0.447374],
+    "rooks_on_open_files_delta": [0.010317, 0.243228],
+    "open_files_toward_king_delta": [0.001994, 0.497080],
+    "win_percentage_delta": [0.077925, 14.632536]
+
+}
+
 total_data = []
 
 
@@ -68,6 +82,9 @@ def state_move_variations (fen: str):
     
     def enum_to_int(x):
         return x.value if x is not None else None
+    
+    def get_z_score(x_name: str, x):
+        return (global_mean_std[x_name][0] - x) / global_mean_std[x_name][1]
 
     for move in moves:
         board = chess.Board(state.fen)
@@ -93,6 +110,17 @@ def state_move_variations (fen: str):
             "rooks_on_open_files_delta": deltas.rooks_on_open_files_delta,
             "open_files_toward_king_delta": deltas.open_files_toward_king_delta,
             "win_percentage_delta": deltas.win_percentage_delta,
+
+            "material_balance_z": get_z_score("material_balance_delta", deltas.material_balance_delta),
+            "piece_activity_z": get_z_score("piece_activity_delta", deltas.piece_activity_delta),
+            "pawn_structure_z": get_z_score("pawn_structure_delta", deltas.pawn_structure_delta),
+            "tactical_danger_z": get_z_score("tactical_danger_delta", deltas.tactical_danger_delta),
+            "stockfish_eval_z": get_z_score("stockfish_eval_delta", deltas.stockfish_eval_delta),
+            "mate_in_z": get_z_score("mate_in_delta", deltas.mate_in_delta),
+            "rooks_on_open_files_z": get_z_score("rooks_on_open_files_delta", deltas.rooks_on_open_files_delta),
+            "open_files_toward_king_z": get_z_score("open_files_toward_king_delta", deltas.open_files_toward_king_delta),
+            "win_percentage_z": get_z_score("win_percentage_delta", deltas.win_percentage_delta),
+
 
             "game_phase_delta": enum_to_int(deltas.game_phase_delta),
             "hanging_piece_delta": 1 if deltas.hanging_piece_delta else 0,
@@ -132,24 +160,25 @@ def main ():
                     enum_bool_delta_points[key].append(deltas[key])
             
             counter += 1
-            if counter % 10000 == 0:
+            if counter % 1000 == 0:
                 print(counter)
-
-            if counter == 250000:
+            print(counter)
+            if counter == 100:
                 break
-        
-    with open(OUTPUT_FILE, "w+") as outfile:
-        for key, deltas in numeric_delta_points.items():
-            if len(deltas) == 0:
-                continue
-            
-            arr = np.array(deltas, dtype=float)
-            mean = np.mean(arr)
-            std = np.std(arr)
-
-            outfile.write(f"{key}: {mean:.6f}, {std:.6f}\n")
     
-    with open("data.json", "w") as f:
+    # UNCOMMMENT IF YOU ARE EXTRACTING A NEW GLOBAL STD & MEAN
+    # with open(OUTPUT_FILE, "w+") as outfile:
+    #     for key, deltas in numeric_delta_points.items():
+    #         if len(deltas) == 0:
+    #             continue
+            
+    #         arr = np.array(deltas, dtype=float)
+    #         mean = np.mean(arr)
+    #         std = np.std(arr)
+
+    #         outfile.write(f"{key}: {mean:.6f}, {std:.6f}\n")
+    
+    with open("data.json", "w+") as f:
         json.dump(total_data, f, indent=2)
 
 if __name__ == "__main__":
