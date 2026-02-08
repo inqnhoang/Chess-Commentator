@@ -18,9 +18,16 @@ from state.game_state import GameState
 from datapoint import DataPoint
 from feature_extractor import FeatureExtractor
 
+from template_commentator import TemplateCommentator
+
+# show chess board outputs for testing?
+VISUALIZE = False
+# just use http://www.ee.unb.ca/cgi-bin/tervo/fen.pl instead
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DATA_FILE = BASE_DIR / "data" / "fen-strings.csv"
-STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-mac"
+# STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-mac"
+STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-windows.exe"
 ENGINE_PATH = str(STOCKFISH_PATH.resolve())
 OUTPUT_FILE = Path(__file__).resolve().parent / "delta_mean_std.txt"
 
@@ -72,8 +79,10 @@ def top_n_moves(fen, engine, n=5):
     
     return [i["pv"][0] for i in info]
 
+
 def state_move_variations (fen: str):
     engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
+    commentator = TemplateCommentator()
     state = GameState(fen)
         
     moves = top_n_moves(state.fen, engine)
@@ -95,7 +104,7 @@ def state_move_variations (fen: str):
         data_point = DataPoint(state, move, next_state)
         deltas = data_point.compute_deltas(engine)
         
-        data.append({
+        row = {
             "fen": state.fen,
             "side_to_move": state.side_to_move.value,
             "move": str(move),
@@ -132,11 +141,21 @@ def state_move_variations (fen: str):
 
             "king_safety_delta": enum_to_int(deltas.king_safety_delta),
             "center_control_delta": enum_to_int(deltas.center_control_delta),
-        })
+        }
+
+        row["comment"] = commentator.make_comment(
+            fen=row["fen"],
+            move_uci=row["move"],
+            row=row,
+            visualize=VISUALIZE,
+            visualize_next=True,
+        )
+
+        data.append(row)
 
     engine.close()
-    
     return data
+
 
 def main ():
     num_workers = cpu_count() - 1
@@ -178,8 +197,10 @@ def main ():
 
     #         outfile.write(f"{key}: {mean:.6f}, {std:.6f}\n")
     
-    with open("data.json", "w+") as f:
+    OUT_JSON = Path(__file__).resolve().parent / "data.json"
+    with open(OUT_JSON, "w+", encoding="utf-8") as f:
         json.dump(total_data, f, indent=2)
+
 
 if __name__ == "__main__":
     main()
