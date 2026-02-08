@@ -41,6 +41,17 @@ class FeatureVector:
 
         # Win percentages w/ Lichess Formula
         self.win_percentage: float | None = None
+
+        # Bools
+        self.is_capture: bool = None
+        self.is_check: bool = None
+        self.is_checkmate: bool = None
+        self.is_castle: bool = None
+        self.is_en_passant: bool = None
+        self.is_promotion: bool = None
+        self.piece_moved: str | None = None
+        self.captured_piece: str | None = None
+        self.promotion_piece: str | None = None
         
     def __repr__(self):
         return "\n".join(f"{k}: {v}" for k, v in vars(self).items())

@@ -26,8 +26,8 @@ VISUALIZE = False
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DATA_FILE = BASE_DIR / "data" / "fen-strings.csv"
-# STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-mac"
-STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-windows.exe"
+STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-mac"
+# STOCKFISH_PATH = BASE_DIR / "stockfish" / "stockfish-windows.exe"
 ENGINE_PATH = str(STOCKFISH_PATH.resolve())
 OUTPUT_FILE = Path(__file__).resolve().parent / "delta_mean_std.txt"
 
@@ -103,12 +103,23 @@ def state_move_variations (fen: str):
         
         data_point = DataPoint(state, move, next_state)
         deltas = data_point.compute_deltas(engine)
+        data_point.extract_move_features()
         
         row = {
             "fen": state.fen,
             "side_to_move": state.side_to_move.value,
             "move": str(move),
             "phase": FeatureExtractor._infer_game_phase(next_state).value,
+
+            "is_capture": data_point.is_capture,
+            "is_check": data_point.is_check,
+            "is_checkmate": data_point.is_checkmate,
+            "is_castle": data_point.is_castle,
+            "is_en_passant": data_point.is_en_passant,
+            "is_promotion": data_point.is_promotion,
+            "piece_moved": data_point.piece_moved,
+            "captured_piece": data_point.captured_piece,
+            "promotion_piece": data_point.promotion_piece,
 
             "material_balance_delta": deltas.material_balance_delta,
             "piece_activity_delta": deltas.piece_activity_delta,

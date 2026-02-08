@@ -22,7 +22,8 @@ class DeltaVector:
         move_impact_delta: MoveImpact | None,
         discovered_attack_or_check_delta: DiscoveredTactic | None,
         hanging_piece_delta: bool | None,
-        promotion_threat_delta: bool | None
+        promotion_threat_delta: bool | None,
+
     ):
         self.material_balance_delta = material_balance_delta
         self.piece_activity_delta = piece_activity_delta
@@ -41,4 +42,5 @@ class DeltaVector:
         self.move_impact_delta = move_impact_delta
         self.discovered_attack_or_check_delta = discovered_attack_or_check_delta
         self.hanging_piece_delta = hanging_piece_delta
-        self.promotion_threat_delta = promotion_threat_delta
+        self.promotion_threat_delta = promotion_threat_delta,
+
