@@ -35,7 +35,6 @@ class DataPoint:
         # Basic move properties
         self.is_capture = curr_board.is_capture(self.move)
         self.is_castle = curr_board.is_castling(self.move)
-        self.is_en_passant = curr_board.is_en_passant(self.move)
         self.is_promotion = self.move.promotion is not None
         
         # Piece information (from source square before move)
@@ -44,11 +43,8 @@ class DataPoint:
         
         # Captured piece (if capture)
         if self.is_capture:
-            if self.is_en_passant:
-                self.captured_piece = 'p'  # En passant always captures pawn
-            else:
-                captured = curr_board.piece_at(self.move.to_square)
-                self.captured_piece = captured.symbol().lower() if captured else None
+            captured = curr_board.piece_at(self.move.to_square)
+            self.captured_piece = captured.symbol().lower() if captured else None
         else:
             self.captured_piece = None
         

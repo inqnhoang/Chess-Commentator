@@ -112,12 +112,9 @@ def state_move_variations (fen: str):
             "phase": FeatureExtractor._infer_game_phase(next_state).value,
 
             "is_capture": data_point.is_capture,
-            "is_check": data_point.is_check,
             "is_checkmate": data_point.is_checkmate,
             "is_castle": data_point.is_castle,
-            "is_en_passant": data_point.is_en_passant,
             "is_promotion": data_point.is_promotion,
-            "piece_moved": data_point.piece_moved,
             "captured_piece": data_point.captured_piece,
             "promotion_piece": data_point.promotion_piece,
 
