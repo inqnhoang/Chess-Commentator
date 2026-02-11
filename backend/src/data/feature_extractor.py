@@ -562,21 +562,39 @@ class FeatureExtractor:
 
     @staticmethod
     def _promotion_threat(state: GameState) -> bool:
-        """Check if there's an imminent pawn promotion threat."""
+        """
+        Check if there's a pawn that can promote on the next move.
+        This means:
+        - White pawn on 7th rank with clear path forward
+        - Black pawn on 2nd rank with clear path forward
+        """
         # White pawns on 7th rank (row 1)
         for c in range(8):
             piece = state.grid[1][c]
             if piece and piece.type == PieceType.PAWN and piece.color == Color.WHITE:
-                return True
+                # Can move forward to promote?
+                if state.grid[0][c] is None:
+                    return True
+                # Can capture diagonally to promote?
+                if c > 0 and state.grid[0][c-1] and state.grid[0][c-1].color == Color.BLACK:
+                    return True
+                if c < 7 and state.grid[0][c+1] and state.grid[0][c+1].color == Color.BLACK:
+                    return True
         
         # Black pawns on 2nd rank (row 6)
         for c in range(8):
             piece = state.grid[6][c]
             if piece and piece.type == PieceType.PAWN and piece.color == Color.BLACK:
-                return True
+                # Can move forward to promote?
+                if state.grid[7][c] is None:
+                    return True
+                # Can capture diagonally to promote?
+                if c > 0 and state.grid[7][c-1] and state.grid[7][c-1].color == Color.WHITE:
+                    return True
+                if c < 7 and state.grid[7][c+1] and state.grid[7][c+1].color == Color.WHITE:
+                    return True
         
         return False
-
 
     @staticmethod
     def _open_files_toward_king(state: GameState) -> int:

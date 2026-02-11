@@ -10,50 +10,50 @@ class DataPoint:
         self.next = next
         self.delta_vector: DeltaVector | None = None
 
-        self.is_capture: bool | None = None
-        self.is_check: bool | None = None
-        self.is_checkmate: bool | None = None
-        self.is_castle: bool | None = None
-        self.is_en_passant: bool | None = None
-        self.is_promotion: bool | None = None
-        self.piece_moved: str | None = None
-        self.captured_piece: str | None = None
-        self.promotion_piece: str | None = None
+        # self.is_capture: bool | None = None
+        # self.is_check: bool | None = None
+        # self.is_checkmate: bool | None = None
+        # self.is_castle: bool | None = None
+        # self.is_en_passant: bool | None = None
+        # self.is_promotion: bool | None = None
+        # self.piece_moved: str | None = None
+        # self.captured_piece: str | None = None
+        # self.promotion_piece: str | None = None
 
-    def extract_move_features(self):
-        """Extract move-specific features using python-chess."""
-        # Use NEXT state (position after the move)
-        board = chess.Board(self.next.fen)
+    # def extract_move_features(self):
+    #     """Extract move-specific features using python-chess."""
+    #     # Use NEXT state (position after the move)
+    #     board = chess.Board(self.next.fen)
         
-        # Check/checkmate status (from the resulting position)
-        self.is_check = board.is_check()
-        self.is_checkmate = board.is_checkmate()
+    #     # Check/checkmate status (from the resulting position)
+    #     self.is_check = board.is_check()
+    #     self.is_checkmate = board.is_checkmate()
         
-        # To get move properties, we need to analyze from the CURR position
-        curr_board = chess.Board(self.curr.fen)
+    #     # To get move properties, we need to analyze from the CURR position
+    #     curr_board = chess.Board(self.curr.fen)
         
-        # Basic move properties
-        self.is_capture = curr_board.is_capture(self.move)
-        self.is_castle = curr_board.is_castling(self.move)
-        self.is_promotion = self.move.promotion is not None
+    #     # Basic move properties
+    #     self.is_capture = curr_board.is_capture(self.move)
+    #     self.is_castle = curr_board.is_castling(self.move)
+    #     self.is_promotion = self.move.promotion is not None
         
-        # Piece information (from source square before move)
-        piece_at_from = curr_board.piece_at(self.move.from_square)
-        self.piece_moved = piece_at_from.symbol().lower() if piece_at_from else None
+    #     # Piece information (from source square before move)
+    #     piece_at_from = curr_board.piece_at(self.move.from_square)
+    #     self.piece_moved = piece_at_from.symbol().lower() if piece_at_from else None
         
-        # Captured piece (if capture)
-        if self.is_capture:
-            captured = curr_board.piece_at(self.move.to_square)
-            self.captured_piece = captured.symbol().lower() if captured else None
-        else:
-            self.captured_piece = None
+    #     # Captured piece (if capture)
+    #     if self.is_capture:
+    #         captured = curr_board.piece_at(self.move.to_square)
+    #         self.captured_piece = captured.symbol().lower() if captured else None
+    #     else:
+    #         self.captured_piece = None
         
-        # Promotion piece (if promotion)
-        if self.is_promotion:
-            promo_piece = chess.piece_name(self.move.promotion)
-            self.promotion_piece = promo_piece
-        else:
-            self.promotion_piece = None
+    #     # Promotion piece (if promotion)
+    #     if self.is_promotion:
+    #         promo_piece = chess.piece_name(self.move.promotion)
+    #         self.promotion_piece = promo_piece
+    #     else:
+    #         self.promotion_piece = None
             
 
     def compute_deltas(self, engine):

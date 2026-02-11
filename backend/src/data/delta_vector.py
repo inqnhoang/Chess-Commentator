@@ -42,5 +42,5 @@ class DeltaVector:
         self.move_impact_delta = move_impact_delta
         self.discovered_attack_or_check_delta = discovered_attack_or_check_delta
         self.hanging_piece_delta = hanging_piece_delta
-        self.promotion_threat_delta = promotion_threat_delta,
+        self.promotion_threat_delta = promotion_threat_delta
 

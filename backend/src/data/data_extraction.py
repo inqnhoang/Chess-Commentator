@@ -103,7 +103,7 @@ def state_move_variations (fen: str):
         
         data_point = DataPoint(state, move, next_state)
         deltas = data_point.compute_deltas(engine)
-        data_point.extract_move_features()
+        # data_point.extract_move_features()
         
         row = {
             "fen": state.fen,
@@ -111,12 +111,12 @@ def state_move_variations (fen: str):
             "move": str(move),
             "phase": FeatureExtractor._infer_game_phase(next_state).value,
 
-            "is_capture": data_point.is_capture,
-            "is_checkmate": data_point.is_checkmate,
-            "is_castle": data_point.is_castle,
-            "is_promotion": data_point.is_promotion,
-            "captured_piece": data_point.captured_piece,
-            "promotion_piece": data_point.promotion_piece,
+            # "is_capture": data_point.is_capture,
+            # "is_checkmate": data_point.is_checkmate,
+            # "is_castle": data_point.is_castle,
+            # "is_promotion": data_point.is_promotion,
+            # "captured_piece": data_point.captured_piece,
+            # "promotion_piece": data_point.promotion_piece,
 
             "material_balance_delta": deltas.material_balance_delta,
             "piece_activity_delta": deltas.piece_activity_delta,
@@ -158,7 +158,6 @@ def state_move_variations (fen: str):
             visualize=VISUALIZE,
             visualize_next=True,
         )
-
         data.append(row)
 
     engine.close()
