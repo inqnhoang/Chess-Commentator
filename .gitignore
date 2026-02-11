@@ -24,6 +24,7 @@ stockfish-*
 
 # data
 data.json
+training_data.jsonl
 
 # Logs
 *.log
