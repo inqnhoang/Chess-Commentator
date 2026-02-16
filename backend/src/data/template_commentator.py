@@ -1,452 +1,286 @@
 from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Optional, Tuple, List
-
+from typing import Optional, List
+import random
 import chess
-from state.game_state import GameState
 
-from enums.moves import MoveImpact, DiscoveredTactic
-from enums.eval import KingSafety, CenterControl, EvaluationBucket
-from enums.board import GamePhase
+def loss_bucket(loss_cp: Optional[int]) -> str:
+    if loss_cp is None: return "NA"
+    if loss_cp <= 30: return "OK"
+    if loss_cp <= 80: return "INACC"
+    if loss_cp <= 200: return "MIST"
+    return "BLUN"
 
+def eval_phrase(cp_bucket: str) -> str:
+    return {
+        "W+": "clearly better for White",
+        "W=": "a bit better for White",
+        "EQ": "about equal",
+        "B=": "a bit better for Black",
+        "B+": "clearly better for Black",
+        "NA": "unclear",
+    }.get(cp_bucket, "unclear")
 
+def uci_to_san(board: chess.Board, move_uci: str) -> str:
+    mv = chess.Move.from_uci(move_uci)
+    return board.san(mv)
 
-# config
-@dataclass(frozen=True)
-class TemplateConfig:
-    # centipawn swing thresholds (delta = after - before)
-    BLUNDER_CP: int = -250
-    MISTAKE_CP: int = -120
-    INACCURACY_CP: int = -60
-    GOOD_CP: int = 80
-    GREAT_CP: int = 200
-
-    # z-score thresholds for "this feature really changed"
-    Z_NOTICEABLE: float = 0.75
-    Z_BIG: float = 1.5
-
-    # pawn structure delta: weakness count (negative is improvement)
-    PAWN_STRUCT_IMPROVE: int = -1
-    PAWN_STRUCT_WORSEN: int = 1
-
-    # tactical danger spike
-    TACTICAL_DANGER_SPIKE: int = 3
-
-    # max motifs to use in commentary
-    MAX_MOTIFS: int = 2
-
+def punchy(options: List[str]) -> str:
+    return random.choice(options)
 
 class TemplateCommentator:
-    """
-    Commentator baseline that writes two to four sentences per move, choosing to mention the most important motifs.
-    """
+    def __init__(self, seed: int = 0):
+        self.rng = random.Random(seed)
 
-    def __init__(self, cfg: TemplateConfig | None = None):
-        self.cfg = cfg or TemplateConfig()
-
-
-    def make_comment(
+    def render(
         self,
-        fen: str,
+        feats,
+        before_fen: str,
         move_uci: str,
-        row: dict[str, Any],
-        *,
-        visualize: bool = False,
-        visualize_next: bool = True,
+        history_uci: Optional[List[str]] = None,
+        opening: Optional[object] = None,
     ) -> str:
-        board = chess.Board(fen)
-        ply = board.ply()
-        actor = "White" if board.turn == chess.WHITE else "Black"
-        enemy = "Black" if actor == "White" else "White"
+        history_uci = history_uci or []
+        before = chess.Board(before_fen)
+        mover_color = before.turn
+        mover = "White" if mover_color == chess.WHITE else "Black"
+        opp = "Black" if mover == "White" else "White"
+        san = uci_to_san(before, move_uci)
 
-        move = None
-        san = move_uci
-        try:
-            move = chess.Move.from_uci(move_uci)
-            if move in board.legal_moves:
-                san = board.san(move)
-        except Exception:
-            pass
+        lb = loss_bucket(getattr(feats, "played_vs_best_loss_cp", None))
+        hang_self = getattr(feats, "hanging_value_created_for_self", 0)
+        hang_opp = getattr(feats, "hanging_value_created_for_opponent", 0)
 
-        if visualize:
-            self._print_states(fen, move, visualize_next)
+        hi_self = getattr(feats, "hanging_highest_piece_self", None)
+        hi_opp  = getattr(feats, "hanging_highest_piece_opponent", None)
 
-        return self._narrate(actor, enemy, san, row, ply)
+        sq_self = getattr(feats, "hanging_highest_square_self", None)
+        sq_opp  = getattr(feats, "hanging_highest_square_opponent", None)
 
 
-
-    # visualization helper
-    def _print_states(self, fen: str, move: Optional[chess.Move], visualize_next: bool) -> None:
-        print("\n=== CURRENT POSITION ===")
-        GameState(fen).print_board()
-
-        if move and visualize_next:
-            b = chess.Board(fen)
-            if move in b.legal_moves:
-                b.push(move)
-                print("\n=== AFTER MOVE ===")
-                GameState(b.fen()).print_board()
+        # helpers
+        def pv_hint() -> str:
+            pv = getattr(feats, "pv_best", None)
+            if not pv:
+                return ""
+            return f" Best was {self._pv_snippet(before, pv)}."
 
 
-    # other helpers
-    def _num(self, row: dict[str, Any], k: str, default: float | int = 0):
-        v = row.get(k, default)
-        return default if v is None else v
-
-    def _enum(self, enum_cls, v: Any):
-        if v is None:
-            return None
-        try:
-            return enum_cls(v)
-        except Exception:
-            return None
-
-    def _fmt_cp(self, cp: float | int) -> str:
-        # short baseline formatting (avoid too many numbers)
-        if cp >= 0:
-            return f"+{int(cp)}"
-        return f"{int(cp)}"
+        def punch(prefixes: List[str]) -> str:
+            return self.rng.choice(prefixes)
 
 
-    # motif selection
-    def _motifs(self, actor: str, enemy: str, row: dict[str, Any], *, exclude: set[str]) -> List[str]:
-        """
-        Returns up to MAX_MOTIFS motif phrases that can be woven into a paragraph.
-        We score motifs by |z| or by boolean importance.
-        """
-        cfg = self.cfg
+        def hang_where(piece: Optional[str], sq: Optional[str]) -> str:
+            if not piece:
+                return "a piece"
+            if sq:
+                return f"the {piece} on {sq}"
+            return f"the {piece}"
 
-        def z(k): return float(self._num(row, k, 0.0))
-        def n(k): return self._num(row, k, 0)
+        
+        # forced mate
+        if getattr(feats, "is_mate", False):
+            return f"{punch(['That’s it!', 'Game over!'])} {mover} plays {san} — checkmate."
 
-        motifs: List[Tuple[float, str, str]] = []  # (score, key, phrase)
+        if getattr(feats, "mate_after", None) is not None:
+            return f"{punch(['Oh wow!', 'This is crushing!', 'That’s decisive!'])} {mover} plays {san} and a mating attack is on the board. {opp} is in huge trouble!"
 
-        # activity / initiative
-        if "piece_activity" not in exclude:
-            score = abs(z("piece_activity_z"))
-            if score >= cfg.Z_NOTICEABLE:
-                phrase = f"{actor} activates their pieces" if z("piece_activity_z") > 0 else f"{actor} kind of worsens the coordination of their pieces here"
-                motifs.append((score, "piece_activity", phrase))
+        # massive blunder
+        if lb in ("BLUN", "MIST"):
+            if hang_self >= 5:
+                target = hang_where(hi_self, sq_self)
+                emo = "game-losing blunder" if lb == "BLUN" else "serious mistake"
+                return (
+                    f"{punch(['Oh no!', 'Disaster!'])} {mover} plays {san} and simply hangs {target}! "
+                    f"This is a {emo}. {opp} can just take it."
+                )
 
-        # open lines toward king / rook activation
-        if "open_lines" not in exclude:
-            score = abs(z("open_files_toward_king_z"))
-            if score >= cfg.Z_NOTICEABLE or n("open_files_toward_king_delta") != 0:
-                if n("open_files_toward_king_delta") > 0:
-                    phrase = f"this creates an open file towards {enemy}’s king, potentially creating attacked chances in the near future"
+            if hang_self >= 3 and lb == "BLUN":
+                target = hang_where(hi_self, sq_self)
+                return (
+                    f"{punch(['That’s a blunder!', 'Catastrophe!', 'Oh no!'])} {mover} goes for {san}, "
+                    f"and hangs {target}. {opp} can win material immediately."
+                )
+
+            # engine/eval based blunder
+            if lb == "BLUN":
+                return (
+                    f"{punch(['Oh no!', 'That’s a blunder!', 'Catastrophe!'])} {mover} goes for {san}, "
+                    f"and it throws the game away. {opp} gets a huge chance to win here!"
+                )
+            else:
+                return (
+                    f"{punch(['That’s a mistake!', 'That\'s not a good move!'])} {mover} plays {san}, "
+                    f"and it gives {opp} a big chance to push an advantage!"
+                )
+
+        # winning material
+        if hang_opp >= 9:
+            target = hang_where("queen", sq_opp) if (hi_opp == "queen" or hi_opp is None) else hang_where(hi_opp, sq_opp)
+            return f"{punch(['What a throw!', 'What a blunder!'])} After {san}, {opp}’s {target} is hanging! {mover} is outright winning now."
+
+        if hang_opp >= 5:
+            target = hang_where(hi_opp, sq_opp)
+            return f"{punch(['What a blunder!', 'A piece is hung!'])} {mover} plays {san} and {opp}’s {target} is just left hanging!"
+
+        # checks / forcing moves
+        if getattr(feats, "is_check", False):
+            if getattr(feats, "is_double_check", False):
+                return f"{punch(['Double check!', 'That’s brutal!'])} {mover} hits {san} with a double check, and {opp} has to try to find a way to escape the attack immediately."
+            return f"{punch(['Check!', 'Forcing move!'])} {mover} plays {san}, giving a check."
+
+        if getattr(feats, "is_promotion", False):
+            promo = getattr(feats, "promoted_to", "a new piece")
+            return f"{punch(['That’s huge!', 'Promotion!'])} {mover} plays {san} and promotes!"
+
+        # trades and imbalances
+        offer_line = self._trade_offer_comment(feats, mover, opp, san)
+        trade_line = self._trade_comment(feats, mover, opp, san)
+
+        if trade_line:
+            return trade_line
+
+        offered = offer_line
+
+        # mention opening
+        if history_uci and opening is not None and len(history_uci) <= 12:
+            in_book = getattr(opening, "played_move_in_book", True)
+            name = getattr(opening, "name", "this opening")
+            eco = getattr(opening, "eco", "")
+            if in_book:
+                line = f"{mover} plays {san}, following theory of the {name} {f'({eco})' if eco else ''}."
+            else:
+                if lb == "INACC":
+                    line = f"{mover} plays {san}, leaving the mainline of the {name}."
                 else:
-                    phrase = f"this removes an open file towards the king, helping prevent any immediate attacks"
-                motifs.append((max(score, 0.8), "open_lines", phrase))
+                    line = f"{mover} plays {san}, deviating from theory in the {name} {f'({eco})' if eco else ''}."
+            if offered:
+                line += " " + offered
+            return line
 
-        if "rook_file" not in exclude:
-            score = abs(z("rooks_on_open_files_z"))
-            if score >= cfg.Z_NOTICEABLE or n("rooks_on_open_files_delta") != 0:
-                if n("rooks_on_open_files_delta") > 0:
-                    phrase = f"{actor} activates a rook onto an open file"
-                else:
-                    phrase = f"{actor} moves a rook away from an open file, potentially letting {enemy} take control of it in the future"
-                motifs.append((max(score, 0.7), "rook_file", phrase))
+        # strategy commentary
+        if getattr(feats, "outpost_created", False):
+            sq = getattr(feats, "outpost_square", None)
+            pc = getattr(feats, "outpost_piece", None)
+            line = f"{punch(['Nice idea!', 'That\'s instructive!'])} {mover} plays {san}"
+            if sq and pc:
+                line += f" and plants a {pc} on an outpost at {sq}."
+            else:
+                line += "."
+            if offered:
+                line += " " + offered
+            return line
 
-        # pawn structure
-        if "pawn_structure" not in exclude:
-            score = abs(z("pawn_structure_z"))
-            if score >= cfg.Z_NOTICEABLE or n("pawn_structure_delta") != 0:
-                if n("pawn_structure_delta") >= cfg.PAWN_STRUCT_WORSEN:
-                    phrase = f"{actor} weakens their pawn structure, potentially leaving long-term weaknesses farther down in the game"
-                elif n("pawn_structure_delta") <= cfg.PAWN_STRUCT_IMPROVE:
-                    phrase = f"{actor} improves their pawn structure, eliminating potential weak pawns for the time being"
-                else:
-                    phrase = f"no immediate change to the pawn structure"
-                motifs.append((max(score, 0.75), "pawn_structure", phrase))
+        if getattr(feats, "passed_pawn_delta_mover", 0) > 0:
+            line = f"{punch(['Nice!', 'Good decision!'])} {mover} plays {san}, creating a passed pawn. This could be an asset that decides the endgame."
+            if offered:
+                line += " " + offered
+            return line
 
-        # tactics
-        if "tactical" not in exclude:
-            score = abs(z("tactical_danger_z"))
-            if score >= cfg.Z_NOTICEABLE or n("tactical_danger_delta") != 0:
-                if n("tactical_danger_delta") >= cfg.TACTICAL_DANGER_SPIKE:
-                    phrase = f"the position becomes very sharp and {enemy} must be precise to not lose the game"
-                elif n("tactical_danger_delta") > 0:
-                    phrase = f"tactics loom in the position, and {enemy} has to stay alert to not blunder the game away"
-                elif n("tactical_danger_delta") < 0:
-                    phrase = f"the position simplifies, leaving no immediate tactics"
-                else:
-                    phrase = f"the tactical balance remains roughly unchanged"
-                motifs.append((max(score, 0.7), "tactical", phrase))
+        if getattr(feats, "open_files_near_enemy_king_delta", 0) > 0:
+            line = f"{punch(['Pressure is building!', 'Lines are opening!', 'This could get dangerous!'])} {mover} plays {san}, opening lines toward {opp}’s king."
+            if offered:
+                line += " " + offered
+            return line
 
-        # king safety
-        if "king_safety" not in exclude:
-            ks = self._enum(KingSafety, row.get("king_safety_delta"))
-            if ks is not None:
-                if ks == KingSafety.UNDER_ATTACK:
-                    motifs.append((1.2, "king_safety", f"{enemy}’s king is under heavy attack"))
-                elif ks == KingSafety.EXPOSED:
-                    motifs.append((1.0, "king_safety", f"{actor} weakens their own king's safety in the process"))
-                else:
-                    motifs.append((0.6, "king_safety", f"king safety remains fairly stable"))
-
-        # center control
-        if "center" not in exclude:
-            cc = self._enum(CenterControl, row.get("center_control_delta"))
-            if cc is not None:
-                if cc == CenterControl.WHITE:
-                    motifs.append((1.0, "center", "control of the center shifts to White"))
-                elif cc == CenterControl.BLACK:
-                    motifs.append((1.0, "center", "control of the center shifts to Black"))
-                else:
-                    motifs.append((0.8, "center", "the fight for the center becomes more contested, if one side can win the battle for the center then the advantage may tip more in their favor"))
-
-        # hanging piece
-        if "hanging" not in exclude and int(n("hanging_piece_delta")) == 1:
-            motifs.append((1.3, "hanging", f"{actor} leaves something hanging, which {enemy} can just take on the next move"))
-
-        # promotion threat
-        if "promotion" not in exclude and int(n("promotion_threat_delta")) == 1:
-            motifs.append((1.1, "promotion", "a pawn promotion threat appears on the board"))
-
-        # game phase change
-        if "phase" not in exclude:
-            gp = self._enum(GamePhase, row.get("game_phase_delta"))
-            if gp is not None:
-                if gp == GamePhase.MIDDLEGAME:
-                    motifs.append((0.9, "phase", "we're now entering the middlegame, where activity and king safety start to matter more. Let's see what plans each side comes up with"))
-                elif gp == GamePhase.ENDGAME:
-                    motifs.append((0.9, "phase", "the game heads toward an endgame, where pawn structure and passed pawns often decide the game"))
-                else:
-                    motifs.append((0.6, "phase", "the game is in the opening, maybe one player will outprep the other"))
-
-        # win percentage / practical chances
-        if "winp" not in exclude:
-            score = abs(z("win_percentage_z"))
-            wp_delta = float(self._num(row, "win_percentage_delta", 0.0))
-            if score >= cfg.Z_NOTICEABLE or abs(wp_delta) >= 6.0:
-                if wp_delta > 0:
-                    phrase = f"the chances swing in {actor}’s favor to win the game, can they find the win"
-                else:
-                    phrase = f"{enemy}’s chances improve noticeably, can they convert their advantage"
-                motifs.append((max(score, 0.85), "winp", phrase))
-
-        # possible mate
-        if "mate" not in exclude:
-            mi = int(self._num(row, "mate_in_delta", 0))
-            mz = float(self._num(row, "mate_in_z", 0.0))
-            if mi != 0 or abs(mz) >= cfg.Z_NOTICEABLE:
-                motifs.append((1.4, "mate", "there is a forced checkmate on the board! If it's found it's game over for {enemy}"))
-
-        # sort by score desc, pick top MAX_MOTIFS
-        motifs.sort(key=lambda x: x[0], reverse=True)
-
-        chosen: List[str] = []
-        used_keys: set[str] = set()
-        for _, key, phrase in motifs:
-            if key in used_keys:
-                continue
-            chosen.append(phrase)
-            used_keys.add(key)
-            if len(chosen) >= cfg.MAX_MOTIFS:
-                break
-
-        return chosen
-
-
-    # def _weave_motifs(self, motifs: List[str]) -> str:
-    #     """
-    #     Turn zero to two motif phrases into a sentence.
-    #     """
-    #     if not motifs:
-    #         return ""
-    #     if len(motifs) == 1:
-    #         return f"The point is that {motifs[0]}."
-    #     # two motifs
-    #     return f"The point is that {motifs[0]}. Furthermore, {motifs[1]}."
-
-    def _cap(self, s: str) -> str:
-        if not s:
-            return s
-        return s[0].upper() + s[1:]
-
-
-    def _weave_motifs(self, motifs: List[str], ply: int) -> str:
-        if not motifs:
-            return ""
-
-        def cap_first_sentence(s: str) -> str:
-            return self._cap(s)
-
-        one_templates = [
-            ("bare", "{m0}."),
-            ("pref", "Notably, {m0}."),
-            ("pref", "A key idea here is that {m0}."),
-            ("pref", "What stands out is that {m0}."),
-            ("pref", "From a positional standpoint, {m0}."),
-            ("pref", "Strategically speaking, {m0}."),
-        ]
-
-        two_templates = [
-            ("bare", "{m0}, and {m1}."),
-            ("m0_starts_sentence", "{m0}. In addition, {m1}."),
-            ("m0_starts_sentence", "{m0}; this also means {m1}."),
-            ("m0_starts_sentence", "{m0}. At the same time, {m1}."),
-            ("pref", "First, {m0}. Second, {m1}."),
-            ("m0_starts_sentence", "{m0}, which also brings {m1}."),
-        ]
-
-        if len(motifs) == 1:
-            kind, tmpl = one_templates[ply % len(one_templates)]
-            m0 = motifs[0]
-            if kind == "bare":
-                m0 = cap_first_sentence(m0)
-            return tmpl.format(m0=m0)
-
-        kind, tmpl = two_templates[ply % len(two_templates)]
-        m0, m1 = motifs[0], motifs[1]
-
-        if kind in {"bare", "m0_starts_sentence"}:
-            m0 = cap_first_sentence(m0)
-
-        if kind == "pref":
-            m0 = self._cap(m0)
-            m1 = self._cap(m1)
-
-        return tmpl.format(m0=m0, m1=m1)
-
-    
-    # combining into commentary
-    def _narrate(self, actor: str, enemy: str, san: str, row: dict[str, Any], ply: int) -> str:
-        cfg = self.cfg
-
-        sf = int(self._num(row, "stockfish_eval_delta", 0))
-        mat = int(round(self._num(row, "material_balance_delta", 0)))
-        impact = self._enum(MoveImpact, row.get("move_impact_delta"))
-        tactic = self._enum(DiscoveredTactic, row.get("discovered_attack_or_check_delta"))
-
-        # select motifs, but exclude the main theme already used
-        exclude: set[str] = set()
-
-        # tactics
-        if tactic == DiscoveredTactic.CHECK:
-            exclude |= {"tactical"}
-            motifs = self._motifs(actor, enemy, row, exclude=exclude)
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} plays {san}, giving a check and immediately taking control of the tempo of the game. "
-                f"{enemy} is forced to respond to this threat. "
-                f"{support} "
-                f"If {actor} follows up accurately, this forcing sequence might be converted into a lasting initiative."
-            ).strip()
-
-        if tactic == DiscoveredTactic.ATTACK:
-            exclude |= {"tactical"}
-            motifs = self._motifs(actor, enemy, row, exclude=exclude)
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"With {san}, {actor} creates a discovered attack. "
-                f"{enemy} suddenly has to deal with multiple threats, and may be losing material here. "
-                f"{support} "
-            ).strip()
-
-        # material
-        if mat >= 2:
-            exclude |= {"hanging"}
-            motifs = self._motifs(actor, enemy, row, exclude=exclude)
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{enemy} leaves something hanging, or this might be the result of a tactic, and {actor} plays {san} to win material! "
-                f"If {actor} prevents {enemy} from getting counterplay and simplify, they should be able to convert this advantage. "
-                f"{support} "
-                f"{enemy} will to complicate the position or find some other compensation to have a chance to hold or even win the game."
-            ).strip()
-
-        if mat == 1:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} plays {san} and picks up a free pawn! "
-                f"If {actor} can consolidate and create a favorable pawn structure, they could win a pawn-up endgame in the future, but this is much harder said than done. "
-                f"{support} "
-                f"{enemy} should look for dynamic counterplay before the extra pawn starts to matter more in the position."
-            ).strip()
-
-        if mat <= -2:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} plays {san}, but this move loses material and gives {enemy} a large, concrete advantage! "
-                f"From here, {enemy} should aim to simplify and convert without taking unnecessary risks. "
-                f"{support} "
-                f"For {actor}, they should try to find some sort of counterplay before the material imbalance decides the game."
-            ).strip()
-
-        # big evaluation swing
-        if sf <= cfg.BLUNDER_CP:
-            exclude |= {"winp"}
-            motifs = self._motifs(actor, enemy, row, exclude=exclude)
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} commits a major blunder with {san}! "
-                f"The evaluation swings sharply in {enemy}'s favor. If {enemy} finds the correct move, the game may be decided very soon! "
-                f"{support} "
-                f"{enemy} should now have a straightforward route to seize control if they stay precise."
-            ).strip()
-
-        if sf <= cfg.MISTAKE_CP:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} makes a serious mistake with {san}! "
-                f"If {enemy} finds the correct tactic or follow-up here, they should be in a much better position. "
-                f"{support} "
-                f"{enemy} should start putting pressure on here and fight for a win."
-            ).strip()
-
-        if sf <= cfg.INACCURACY_CP:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} makes an inaccuracy with {san}. "
-                f"This move isn't immediately decisive, but it gives {enemy} a way to fight for a better position and potentially have winning chances. "
-                f"{support} "
-            ).strip()
-
-        if sf >= cfg.GREAT_CP:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} finds an excellent move in {san}. "
-                f"This keeps the initiative under their control and allows them to keep fighting for an advantage. "
-                f"{support} "
-            ).strip()
-
-        if sf >= cfg.GOOD_CP:
-            motifs = self._motifs(actor, enemy, row, exclude=set())
-            support = self._weave_motifs(motifs, ply)
-            return (
-                f"{actor} plays {san}, a strong move that keeps the position in their favor. "
-                f"This quietly increases pressure on the opponent and prevents them from just comfortably developing or following their own plans. "
-                f"{support} "
-            ).strip()
-
-        # if no big centipawn swing, use impact + positional themes
-        motifs = self._motifs(actor, enemy, row, exclude=set())
-        support = self._weave_motifs(motifs, ply)
-
-        if impact == MoveImpact.WORSENS:
-            return (
-                f"{actor} plays {san}, but this seems to be a step in the wrong direction. "
-                f"This gives {enemy} a chance to take the initiative or improve the position without being challenged immediately. "
-                f"{support} "
-            ).strip()
-
-        if impact == MoveImpact.IMPROVES:
-            return (
-                f"{actor} plays {san} and slightly improves their position. "
-                f"{support} "
-                f"From here, {actor} will want to keep improving slowly and eventually find some way to create an initiative or attack."
-            ).strip()
+        # inaccuracy
+        if lb == "INACC":
+            line = f"{punch(['Not the cleanest.', 'A bit imprecise.', 'Slight slip.'])} {mover} plays {san}."
+            hint = pv_hint().strip()
+            if hint:
+                line += " " + hint
+            if offered:
+                line += " " + offered
+            return line
 
         # neutral fallback
-        return (
-            f"{actor} plays {san}, keeping the position fairly equal. "
-            f"{support} "
-            f"If both sides continue to play good moves or keep the position equal, this game may just end in a draw."
-        ).strip()
+        base = f"{mover} plays {san}"
+        if offered:
+            base += f", {offered}"
+        base += "."
+        return f"{base} The position stays {self._eval_fallback(feats)}."
+
+
+    # trade offer commentary
+    def _trade_offer_comment(self, feats, mover: str, opp: str, san: str) -> Optional[str]:
+        offers = []
+
+        if getattr(feats, "queen_trade_offered", False):
+            offers.append("offers a queen trade")
+        if getattr(feats, "rook_trade_offered", False):
+            offers.append("offers a rook trade")
+        if getattr(feats, "bishop_trade_offered", False):
+            offers.append("offers a bishop trade")
+        if getattr(feats, "knight_trade_offered", False):
+            offers.append("offers a knight trade")
+
+        if not offers:
+            return None
+
+        if len(offers) == 1:
+            return f"and {offers[0]}"
+        return f"and {offers[0]} — {offers[1]}"
+
+
+    def _trade_comment(self, feats, mover: str, opp: str, san: str) -> Optional[str]:
+        if getattr(feats, "queen_trade", False):
+            return f"{punchy(['Simplify!', 'Trading queens.', 'Into an endgame.'])} {mover} plays {san}, and the queens come off."
+
+        if getattr(feats, "rook_trade", False):
+            return f"{punchy(['Rooks get traded.', 'Heavy pieces come off.', 'Simplifying.'])} {mover} plays {san}, and the rooks are traded."
+
+        if getattr(feats, "bishop_trade", False):
+            return f"{punchy(['Bishops traded.', 'Minor pieces come off.', 'Simplification.'])} {mover} plays {san}, swapping bishops."
+
+        if getattr(feats, "knight_trade", False):
+            return f"{punchy(['Knights traded.', 'Pieces come off.', 'Simplifying.'])} {mover} plays {san}, and the knights are exchanged."
+
+        dm_r = getattr(feats, "delta_rooks_mover", 0)
+        do_r = getattr(feats, "delta_rooks_opp", 0)
+        dm_b = getattr(feats, "delta_bishops_mover", 0)
+        do_b = getattr(feats, "delta_bishops_opp", 0)
+        dm_n = getattr(feats, "delta_knights_mover", 0)
+        do_n = getattr(feats, "delta_knights_opp", 0)
+        dm_q = getattr(feats, "delta_queens_mover", 0)
+        do_q = getattr(feats, "delta_queens_opp", 0)
+
+        if (dm_q < 0 and do_q < 0):
+            return f"{punchy(['Trading queens.', 'Queen swap.', 'Simplify!'])} {mover} plays {san}, and the queens come off the board."
+        if (dm_r < 0 and do_r < 0):
+            return f"{punchy(['Rooks traded.', 'Heavy pieces off.', 'Simplification.'])} {mover} plays {san}, and the rooks are traded."
+        if (dm_b < 0 and do_b < 0):
+            return f"{punchy(['Bishops traded.', 'Minor-piece exchange.', 'Simplifying.'])} {mover} plays {san}, exchanging bishops."
+        if (dm_n < 0 and do_n < 0):
+            return f"{punchy(['Knights traded.', 'Pieces come off.', 'Simplification.'])} {mover} plays {san}, exchanging knights."
+
+        # bishop/knight imbalance
+        if getattr(feats, "bishop_for_knight_imbalance", False) or (dm_b < 0 and do_n < 0):
+            return f"{punchy(['Interesting choice.', 'Imbalance!', 'Different pieces now.'])} {mover} plays {san}, giving up a bishop for a knight, creating an knight vs. bishop imbalance."
+        if getattr(feats, "knight_for_bishop_imbalance", False) or (dm_n < 0 and do_b < 0):
+            return f"{punchy(['Interesting trade.', 'Imbalance!', 'New structure.'])} {mover} plays {san}, exchanging a knight for a bishop, which is typically a positive trade. However, we’ll have to see who prefers this imbalance in the long-term."
+
+        # sacrifice exchange/trade
+        if getattr(feats, "exchange_trade", False):
+            return f"{punchy(['Whoa!', 'Exchange!', 'Sacrifice?'])} {mover} plays {san}, and we get a rook sacrifice for a minor piece!"
+
+        return None
+
+    def _pv_snippet(self, board: chess.Board, pv_uci: List[str], plies: int = 2) -> str:
+        tmp = board.copy(stack=False)
+        out = []
+        for mv_uci in pv_uci[:plies]:
+            mv = chess.Move.from_uci(mv_uci)
+            if mv not in tmp.legal_moves:
+                break
+            out.append(tmp.san(mv))
+            tmp.push(mv)
+        return " ".join(out) if out else "(best line)"
+
+    def _eval_fallback(self, feats) -> str:
+        cp = getattr(feats, "eval_after_cp", None)
+        if cp is None:
+            return "unclear"
+        if cp > 150: return "better for White"
+        if cp > 50:  return "slightly better for White"
+        if cp >= -50: return "about equal"
+        if cp >= -150: return "slightly better for Black"
+        return "better for Black"
