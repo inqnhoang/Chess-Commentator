@@ -1,10 +1,8 @@
-import { Chessboard } from './Chessboard';
+import { Chess } from "chess.js";
+import ChessCommentator from "./components/chess-commentator";
 
 function App() {
-  return <Chessboard options={{ 
-    position: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
-    boardOrientation: 'white'
-  }} />;
+  return <ChessCommentator />
 }
 
 export default App;

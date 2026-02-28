@@ -5,7 +5,6 @@ This rubric is designed for pairwise evaluation of two commentary candidates (A 
 Return: (1) Winner A/B and (2) 1–5 ratings for each criterion for both A and B.
 
 INPUTS THE JUDGE SHOULD RECEIVE
-- Feature context: a structured/linearized summary of the move and extracted signals (eval swing, win%, trades, checks, hanging pieces, promotion, etc.)
 - Candidate A (required)
 - Candidate B (required)
 

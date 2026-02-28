@@ -1,2 +1,5 @@
 # Chess-Commentator
 CS175 Project
+
+chess.js@1.4.0
+react-chessboard@5.10.0
