@@ -1,6 +1,8 @@
 # Chess-Commentator
 
-A Full-Stack AI Project that fine tunes open-source sec2sec model, google's SMALL-T5, on chess commentary.
+A Full-Stack AI Project that fine tunes open-source sec2sec model, google's SMALL-T5, on chess commentary.  
+
+Demo can be found in demo/rookie_demo.ipynb
 
 ## Prerequisites
 
